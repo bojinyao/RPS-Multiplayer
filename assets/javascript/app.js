@@ -25,11 +25,19 @@ $(document).ready(function () {
 	var p2statSec = $(".player2-status-section");
 	var matchInfo = $(".match-info");
 	var chatHist = $(".chat-history");
+
+
+
 	var p1inDb = false;
 	var p2inDb = false;
 	var p1Name = null;
 	var p2Name = null;
+	var p1Choice = null;
+	var p2Choice = null;
 	var isSpectator = false;
+	var turnNum = 0;
+	var gameIsOngoing = false;
+
 
 	var connectedRef = database.ref(".info/connected");
 	var myDatabaseRef = null;
@@ -80,6 +88,40 @@ $(document).ready(function () {
 	}
 
 	/**
+	 * Display a round result in MatchInfo section.
+	 * Result is an integer returned by playRPS
+	 * @param {Integer} result 
+	 */
+	function updateRoundResult(result) {
+		let p1Val = database.ref(`/players/player1`).val();
+		let p2Val = database.ref(`/players/player2`).val();
+		let p1Wins = p1Val.wins;
+		let p1Losses = p1Val.losses;
+		let p2Wins = p2Val.wins;
+		let p2Losses = p2Val.losses;
+		if (result === 0) {
+			matchInfo.html(`<h3>Tie Game!</h3>`);
+		} else if (result === 1) {
+			matchInfo.html(`<h3>${p1Name} Wins!</h3>`);
+			
+			database.ref(`/players/player1`).update({
+				wins: p1Wins++,
+			});
+			database.ref(`/players/player2`).update({
+				losses: p2Losses++,
+			});
+		} else {
+			matchInto.html(`<h3>${p2Name} Wins!</h3>`);
+			database.ref(`/players/player1`).update({
+				losses: p1Losses++,
+			});
+			database.ref(`/players/player2`).update({
+				wins: p2Wins++,
+			});
+		}
+	}
+
+	/**
 	 * Display the three buttons using jQuery section selection,
 	 * button identifies player with data-player. Choice is stored
 	 * in data-rps 
@@ -87,17 +129,18 @@ $(document).ready(function () {
 	 * @param {String} player 
 	 */
 	function displayButtonsIn(section, player) {
-		section.append(`<button class="rps-button btn btn-outline-primary" type="button" data-player="${player}" data-rps="rock">Rock</button>`);
-		section.append(`<button class="rps-button btn btn-outline-primary" type="button" data-player="${player}" data-rps="paper">Paper</button>`);
-		section.append(`<button class="rps-button btn btn-outline-primary" type="button" data-player="${player}" data-rps="scissors">Scissors</button>`);
+		section.append(`<button class="rps-button btn btn-block btn-outline-primary" type="button" data-player="${player}" data-rps="rock">Rock</button>`);
+		section.append(`<button class="rps-button btn btn-block btn-outline-primary" type="button" data-player="${player}" data-rps="paper">Paper</button>`);
+		section.append(`<button class="rps-button btn btn-block btn-outline-primary" type="button" data-player="${player}" data-rps="scissors">Scissors</button>`);
 	}
 
 	/**
 	 * Start the first round of game to propagate rest of the game. 
 	 */
 	function startGame() {
-		displayButtonsIn(p1btnSec, "player1");
+		console.log(`Game started myDbRef: ${myDatabaseRef}`);
 		if (myDatabaseRef === "player1") {
+			displayButtonsIn(p1btnSec, "player1");
 			btmGenfoSec.html(`It's your turn!`);
 		} else {
 			btmGenfoSec.html(`It's ${p1Name}'s turn!`);
@@ -124,6 +167,8 @@ $(document).ready(function () {
 	 */
 	database.ref().on("value", function (snap) {
 		if (snap.child("players").exists()) {
+			turnNum = snap.child("/players/").val().turn;
+			p1Turn = snap.child("/players/").val().p1Turn;
 			if (snap.child("players/player1").val() !== null) {
 				p1inDb = true;
 				let val1 = snap.child("players/player1").val();
@@ -140,13 +185,14 @@ $(document).ready(function () {
 			}
 		}
 		isSpectator = p1inDb && p2inDb;
-		// if (isSpectator) {
-		// 	topGenfoSec.html(`<h3>Hi! You're spectating</h3>`);
-		// }
-		if (p1inDb && p2inDb && myDatabaseRef === "player1") {
+		if (myDatabaseRef === null && isSpectator) {
+			topGenfoSec.html(`<h3>Hi! You're spectating</h3>`);
+		}
+		console.log(`db p1: ${p1Name} ${p1inDb}, p2: ${p2Name} ${p2inDb} turnNum: ${turnNum} myDbRef: ${myDatabaseRef}`);
+		if (turnNum === 0 && p1inDb && p2inDb && myDatabaseRef !== null) {
 			startGame();
 		}
-		console.log(`db p1: ${p1Name} ${p1inDb}, p2: ${p2Name} ${p2inDb}`);
+		
 	});
 
 	/**
@@ -155,7 +201,7 @@ $(document).ready(function () {
 	$(document).on("click", ".start-button", function (event) {
 		event.preventDefault();
 		if (p1inDb && p2inDb) {
-			console.log("unexpected access to new player occurred.");
+			console.error("unexpected access to new player occurred.");
 			return;
 		}
 		let usrName = null;
@@ -163,8 +209,13 @@ $(document).ready(function () {
 			usrName = $(item).val().trim();
 			$(item).val("");
 		});
+		database.ref("/players/").update({
+			turn: 0,
+			p1Turn : true,
+		});
 		if (!p1inDb) {
 			console.log(`database p1 is: ${usrName}`);
+			myDatabaseRef = "player1";
 			database.ref("/players/player1").set({
 				choice: "none",
 				name: usrName,
@@ -175,9 +226,9 @@ $(document).ready(function () {
 					console.log("Errors handled: " + errorObject);
 				}
 			});
-			myDatabaseRef = "player1";
 		} else {
 			console.log(`database p2 is: ${usrName}`);
+			myDatabaseRef = "player2";
 			database.ref("/players/player2").set({
 				choice: "none",
 				name: usrName,
@@ -188,10 +239,9 @@ $(document).ready(function () {
 					console.log("Errors handled: " + errorObject);
 				}
 			});
-			myDatabaseRef = "player2";
 		}
 		topGenfoSec.html(`<h3>Hi ${usrName}! You are ${myDatabaseRef}</h3>`);
-		console.log(`my database reference is: ${myDatabaseRef}`);
+		console.log(`my database reference is: ${myDatabaseRef} turnNum: ${turnNum} p1Turn: ${p1Turn}`);
 
 	});
 
@@ -212,44 +262,8 @@ $(document).ready(function () {
 		database.ref(`/players/${player}`).update({
 			choice: choice,
 		});
-	});
-
-	/**
-	 * When either player's data changes, update the corresponding data sections.
-	 */
-	database.ref("/players/player1").on("value", function (snapshot) {
-		let val = snapshot.val();
-		if (val.choice !== "none") {
-			p1btnSec.html(`<h3>${val.choice}</h3>`);
-			if (myDatabaseRef === "player1") {
-				btmGenfoSec.html(`Waiting for ${p2Name} to choose.`);
-			} else {
-				btmGenfoSec.html(`It's Your Turn!`);
-			}
-		} else {
-			p1statSec.html(`wins: ${val.wins} losses: ${val.losses}`);
-		}
-	}, function(error) {
-		if (error) {
-			console.log(error);
-		}
-	});
-	database.ref("/players/player2").on("value", function (snapshot) {
-		let val = snapshot.val();
-		if (val.choice !== "none") {
-			p2btnSec.html(`<h3>${val.choice}</h3>`);
-			if (myDatabaseRef === "player2") {
-				btmGenfoSec.html(`Waiting for ${p1Name} to choose.`);
-			} else {
-				btmGenfoSec.html(`It's Your Turn!`);
-			}
-		} else {
-			p2statSec.html(`wins: ${val.wins} losses: ${val.losses}`);
-		}
-	}, function(error) {
-		if (error) {
-			console.log(error);
-		}
+		gameIsOngoing = true;
+		
 	});
 
 	/**
@@ -258,7 +272,6 @@ $(document).ready(function () {
 	database.ref("/players/").on("child_added", function (childSnapshot) {
 
 		console.log(`child added:`);
-		console.log(childSnapshot);
 		console.log(childSnapshot.val());
 		
 
@@ -267,6 +280,60 @@ $(document).ready(function () {
 			console.log("Errors handled: " + errorObject);
 		}
 	});
+
+
+
+	/**
+	 * When either player's data changes, update the corresponding data sections.
+	 */
+	// database.ref("/players/player1").on("value", function (snapshot) {
+	// 	let val = snapshot.val();
+	// 	if (val.choice !== "none") {
+	// 		database.ref(`/players/`).update({
+	// 			turn: turnNum + 1,
+	// 		});
+	// 		p1Choice = val.choice;
+	// 		p1btnSec.html(`<h3>${val.choice}</h3>`);
+	// 		if (myDatabaseRef === "player1") {
+	// 			btmGenfoSec.html(`Waiting for ${p2Name} to choose.`);
+	// 		} else {
+	// 			btmGenfoSec.html(`It's Your Turn!`);
+	// 			displayButtonsIn(p2btnSec, "player2");
+	// 		}
+	// 	} else {
+	// 		p1statSec.html(`wins: ${val.wins} losses: ${val.losses}`);
+	// 	}
+	// }, function(error) {
+	// 	if (error) {
+	// 		console.log(error);
+	// 	}
+	// });
+	// database.ref("/players/player2").on("value", function (snapshot) {
+	// 	let val = snapshot.val();
+	// 	if (val.choice !== "none") {
+	// 		p2Choice = val.choice;
+	// 		p2btnSec.html(`<h3>${val.choice}</h3>`);
+	// 		let roundResult = playRPS(p1Choice, p2Choice);
+	// 		updateRoundResult(roundResult);
+	// 		setTimeout(function() {
+	// 			matchInfo.empty();
+	// 			p1btnSec.empty();
+	// 			p2btnSec.empty();
+	// 		}, 3000);
+	// 		if (myDatabaseRef === "player2") {
+	// 			btmGenfoSec.html(`Waiting for ${p1Name} to choose.`);
+	// 		} else {
+	// 			btmGenfoSec.html(`It's Your Turn!`);
+	// 		}
+	// 	} else {
+	// 		p2statSec.html(`wins: ${val.wins} losses: ${val.losses}`);
+	// 	}
+	// }, function(error) {
+	// 	if (error) {
+	// 		console.log(error);
+	// 	}
+	// });
+
 
 
 
