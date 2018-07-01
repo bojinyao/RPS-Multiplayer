@@ -1,0 +1,9 @@
+.rps-box {
+    overflow: hidden;
+    height: 15rem;
+}
+
+.chat-history {
+    height: 10rem;
+    background-color: white;
+}
